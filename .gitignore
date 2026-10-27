@@ -1,0 +1,31 @@
+# Local environment and configuration
+.venv/
+venv/
+instance/
+.env
+.env.*
+!.env.example
+
+# Local invoice data and original documents
+data/
+pdfs/
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+!examples/facturas-demo.db
+
+# Python-generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Editor and local tooling state
+.qodo/
+.scratch/
+.vscode/
+
+# Logs and exported reports
+*.log
+*.xlsx

@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Facturas de compra — registro y consolidación mensual</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+<header class="barra">
+  <h1>Facturas de compra</h1>
+  <div class="barra-periodo">
+    <label>Período <input type="month" id="periodo" required></label>
+    <select id="periodos-conocidos" title="Períodos con facturas registradas"></select>
+    <span id="estado-periodo" class="chip"></span>
+  </div>
+  <span id="info-config" class="tenue"></span>
+</header>
+
+<main>
+  <!-- ============================ SECTOR 1: carga y lectura ============================ -->
+  <section id="sector-carga" class="sector">
+    <h2>1. Cargar factura</h2>
+    <div id="zona-drop" class="zona-drop" tabindex="0" role="button"
+         aria-label="Arrastrar o seleccionar un PDF">
+      <p><strong>Arrastrá un PDF aquí</strong> o</p>
+      <button type="button" id="btn-seleccionar">Seleccionar archivo…</button>
+      <input type="file" id="input-archivo" accept="application/pdf,.pdf" hidden>
+      <p class="tenue">Facturas digitales o escaneadas · máximo <span id="max-mb">20</span> MB</p>
+      <p class="tenue"><button type="button" id="btn-manual" class="enlace">Cargar una factura sin PDF</button></p>
+    </div>
+    <div id="carga-estado" class="mensaje" hidden></div>
+
+    <div id="editor" hidden>
+      <div class="editor-cabecera">
+        <h3 id="editor-titulo">Revisión de los datos extraídos</h3>
+        <span id="editor-archivo" class="tenue"></span>
+      </div>
+      <div class="editor-cuerpo">
+        <div class="visor" id="visor">
+          <div class="visor-barra">
+            <button type="button" id="pag-ant" aria-label="Página anterior">◀</button>
+            <span id="pag-info"></span>
+            <button type="button" id="pag-sig" aria-label="Página siguiente">▶</button>
+            <a id="abrir-pdf" target="_blank" rel="noopener">Abrir PDF original ↗</a>
+          </div>
+          <div class="visor-imagen"><img id="visor-img" alt="Vista previa de la factura"></div>
+          <details>
+            <summary>Texto extraído del documento</summary>
+            <pre id="texto-extraido"></pre>
+          </details>
+        </div>
+
+        <form id="form-factura" autocomplete="off" novalidate>
+          <div id="alerta-duplicado" class="alerta error" hidden></div>
+          <div id="alerta-solo-lectura" class="alerta info" hidden>
+            El período de esta factura está cerrado: sólo puede consultarse. Para corregirla, reabra el período.
+          </div>
+          <ul id="lista-advertencias" class="lista-avisos"></ul>
+          <p class="leyenda">
+            Origen del dato: <span class="conf conf-alta"></span> QR/etiqueta (alta)
+            <span class="conf conf-media"></span> media <span class="conf conf-baja"></span> baja, revisar
+            <span class="conf conf-falta"></span> no encontrado
+          </p>
+
+          <fieldset>
+            <legend>Comprobante</legend>
+            <div class="grid-campos" data-grupo="comprobante"></div>
+          </fieldset>
+          <fieldset>
+            <legend>Emisor (proveedor)</legend>
+            <div class="grid-campos" data-grupo="emisor"></div>
+          </fieldset>
+          <fieldset>
+            <legend>Importes</legend>
+            <div class="grid-campos" data-grupo="importes"></div>
+            <p class="derivados" id="derivados"></p>
+          </fieldset>
+          <fieldset>
+            <legend>IVA discriminado por alícuota</legend>
+            <table class="tabla-editable" id="tabla-iva">
+              <thead><tr><th>Alícuota</th><th>Base imponible</th><th>Importe IVA</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <button type="button" class="enlace" data-agregar="iva">+ Agregar alícuota</button>
+          </fieldset>
+          <fieldset>
+            <legend>Descuentos y bonificaciones</legend>
+            <table class="tabla-editable" id="tabla-descuentos">
+              <thead><tr><th>Descripción</th><th>%</th><th>Base</th><th>Importe</th><th>Origen</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <button type="button" class="enlace" data-agregar="descuentos">+ Agregar descuento</button>
+          </fieldset>
+          <fieldset>
+            <legend>Otros tributos y percepciones</legend>
+            <table class="tabla-editable" id="tabla-tributos">
+              <thead><tr><th>Tipo</th><th>Descripción</th><th>Alícuota %</th><th>Base</th><th>Importe</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <button type="button" class="enlace" data-agregar="tributos">+ Agregar tributo</button>
+          </fieldset>
+
+          <div id="panel-problemas">
+            <h4>Controles de coherencia</h4>
+            <ul id="lista-problemas" class="lista-avisos"></ul>
+          </div>
+          <label class="check" id="lbl-aceptar">
+            <input type="checkbox" id="aceptar-advertencias">
+            Revisé las advertencias y confirmo que los datos son correctos
+          </label>
+          <div class="acciones">
+            <button type="submit" id="btn-guardar" class="primario">Confirmar y registrar</button>
+            <button type="button" id="btn-cancelar">Descartar</button>
+            <span id="estado-guardado" class="tenue"></span>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ SECTOR 2: grid ============================ -->
+  <section id="sector-grid" class="sector">
+    <h2>2. Facturas registradas</h2>
+    <div class="filtros">
+      <input type="search" id="f-buscar" placeholder="Buscar en todas las columnas…">
+      <input type="text" id="f-proveedor" placeholder="Proveedor o CUIT">
+      <select id="f-tipo"><option value="">Todos los tipos</option></select>
+      <select id="f-estado">
+        <option value="">Todos los estados</option>
+        <option value="PENDIENTE">Pendiente de revisión</option>
+        <option value="VERIFICADA">Verificada</option>
+      </select>
+      <label>Desde <input type="date" id="f-desde"></label>
+      <label>Hasta <input type="date" id="f-hasta"></label>
+      <label class="check"><input type="checkbox" id="f-todos"> Todos los períodos</label>
+      <button type="button" id="f-limpiar">Limpiar filtros</button>
+    </div>
+    <div class="tabla-contenedor">
+      <table id="grid" class="grid">
+        <thead>
+        <tr>
+          <th data-col="fecha">Fecha</th>
+          <th data-col="tipo">Tipo</th>
+          <th data-col="comprobante">Pto. venta – Número</th>
+          <th data-col="cuit">CUIT emisor</th>
+          <th data-col="proveedor">Proveedor</th>
+          <th data-col="ubicacion">Localidad / Provincia</th>
+          <th data-col="moneda">Mon.</th>
+          <th data-col="neto" class="num">Neto gravado</th>
+          <th data-col="nograv" class="num">Exento / No grav.</th>
+          <th data-col="alicuotas">Alícuotas IVA</th>
+          <th data-col="iva" class="num">IVA</th>
+          <th data-col="descpct" class="num">% Desc.</th>
+          <th data-col="desc" class="num">Descuentos</th>
+          <th data-col="total" class="num">Total</th>
+          <th data-col="estado">Estado</th>
+          <th>Acciones</th>
+        </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="grid-info" class="tenue"></p>
+  </section>
+
+  <!-- ============================ SECTOR 3: resumen ============================ -->
+  <section id="sector-resumen" class="sector">
+    <h2>3. Resumen y consolidación — <span id="resumen-periodo"></span></h2>
+    <div id="resumen-contenido"></div>
+    <div class="acciones">
+      <a id="btn-excel" class="boton" href="#">Exportar detalle a Excel</a>
+      <a id="btn-pdf" class="boton" href="#">Exportar informe PDF</a>
+      <button type="button" id="btn-cerrar" class="primario">Cerrar período</button>
+      <button type="button" id="btn-reabrir">Reabrir período…</button>
+    </div>
+    <details id="historial">
+      <summary>Historial de cierres y reaperturas</summary>
+      <div id="historial-contenido"></div>
+    </details>
+  </section>
+</main>
+
+<dialog id="dialogo">
+  <form method="dialog">
+    <p id="dialogo-texto"></p>
+    <textarea id="dialogo-input" rows="3" hidden></textarea>
+    <menu>
+      <button value="cancelar" type="submit">Cancelar</button>
+      <button value="ok" type="submit" class="primario" id="dialogo-ok">Aceptar</button>
+    </menu>
+  </form>
+</dialog>
+</body>
+</html>
